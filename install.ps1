@@ -5,8 +5,9 @@
 #  Normal use (downloads the EXE from GitHub):
 #    irm https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/install.ps1 | iex
 #
-#  The download is checked against SHA256SUMS.txt in the same repository and
-#  the installer keeps the copy you already have when it is identical.
+#  The download is checked against SHA256SUMS.txt and the installer keeps the
+#  copy you already have when it is identical. The EXE comes from the pinned
+#  release asset first, the raw file in the repository is the fallback.
 #
 #  Options:
 #    -Uninstall     remove the app + shortcuts (keeps your backups)
@@ -16,10 +17,13 @@
 #    -NoDesktop     skip the Desktop shortcuts
 #    -NoShortcuts   install only, no shortcuts at all
 #    -Force         reinstall even when the installed copy is identical
+#    -Url <url>     download the EXE from somewhere else
+#    -FallbackUrl   second source to try when the first one fails
 # ---------------------------------------------------------------
 [CmdletBinding()]
 param(
-    [string]$Url = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/Aki-Lxstboss-optimize.exe',
+    [string]$Url = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/releases/download/v2.6.0/Aki-Lxstboss-optimize.exe',
+    [string]$FallbackUrl = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/Aki-Lxstboss-optimize.exe',
     [string]$File,
     [switch]$Uninstall,
     [switch]$Purge,
@@ -88,6 +92,11 @@ Write-Host '  ============================================================' -For
 
 if (-not (Test-Path -LiteralPath $appDir)) { New-Item -ItemType Directory -Path $appDir -Force | Out-Null }
 
+function Get-CacheBusted([string]$uri) {
+    $sep = if ($uri.Contains('?')) { '&' } else { '?' }
+    return ($uri + $sep + 't=' + [DateTime]::UtcNow.Ticks)
+}
+
 # $sourcePath = the file that will be copied into place
 # $tempFile   = temporary download that has to be cleaned up afterwards
 $sourcePath = $null
@@ -99,25 +108,50 @@ if ($File) {
     Step 'installing from local file'
     Say $sourcePath 'Gray'
 } else {
-    Step "downloading $exeName"
-    $tempFile = Join-Path $env:TEMP ("aki-dl-" + [guid]::NewGuid().ToString('N') + '.exe')
-    $bust = [DateTime]::UtcNow.Ticks
-    try {
-        Invoke-WebRequest -Uri ($Url + '?raw=1&t=' + $bust) -OutFile $tempFile -UseBasicParsing -TimeoutSec 180 `
-            -Headers @{ 'Cache-Control' = 'no-cache' }
-    } catch {
-        Say "download failed: $($_.Exception.Message)" 'Red'
+    # The release asset is pinned (it can never change), the raw file in the
+    # repository is the fallback for a build that is not tagged yet.
+    $candidates = @($Url)
+    if ($FallbackUrl) { $candidates += $FallbackUrl }
+
+    $newHash = ''
+    $usedUrl = ''
+    foreach ($cand in $candidates) {
+        Step "downloading $exeName"
+        $dl = Join-Path $env:TEMP ("aki-dl-" + [guid]::NewGuid().ToString('N') + '.exe')
+        try {
+            Invoke-WebRequest -Uri (Get-CacheBusted $cand) -OutFile $dl -UseBasicParsing -TimeoutSec 180 `
+                -Headers @{ 'Cache-Control' = 'no-cache' }
+        } catch {
+            Say "download failed: $($_.Exception.Message)" 'Yellow'
+            if (Test-Path -LiteralPath $dl) { Remove-Item -LiteralPath $dl -Force -ErrorAction SilentlyContinue }
+            continue
+        }
+
+        # --- it has to be a real Windows executable ----------------------
+        $bytes = [IO.File]::ReadAllBytes($dl)
+        if ($bytes.Length -lt 100000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            Say 'that file is not a valid EXE - trying the next source' 'Yellow'
+            Remove-Item -LiteralPath $dl -Force -ErrorAction SilentlyContinue
+            continue
+        }
+
+        $newHash = (Get-FileHash -LiteralPath $dl -Algorithm SHA256).Hash
+        $usedUrl = $cand
+        $tempFile = $dl
+        break
+    }
+
+    if (-not $tempFile) {
+        Say 'could not download the app from any source' 'Red'
         Say 'check the URL or your connection, then try again' 'DarkGray'
-        if (Test-Path -LiteralPath $tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
         exit 1
     }
 
     # --- verify the download against the published SHA256 list ---------
-    $newHash = (Get-FileHash -LiteralPath $tempFile -Algorithm SHA256).Hash
-    $sumsUrl = $Url -replace '[^/]+$', 'SHA256SUMS.txt'
+    $sumsUrl = $usedUrl -replace '[^/]+$', 'SHA256SUMS.txt'
     $published = ''
     try {
-        $sumsText = (Invoke-WebRequest -Uri ($sumsUrl + '?raw=1&t=' + $bust) -UseBasicParsing -TimeoutSec 30 `
+        $sumsText = (Invoke-WebRequest -Uri (Get-CacheBusted $sumsUrl) -UseBasicParsing -TimeoutSec 30 `
                        -Headers @{ 'Cache-Control' = 'no-cache' }).Content
         $sumsText = $sumsText -replace "^\uFEFF", ''
         foreach ($line in ($sumsText -split "`n")) {
@@ -152,15 +186,6 @@ if ($File) {
 }
 
 if ($sourcePath) {
-    # --- validate: must be a real Windows executable -------------------
-    $bytes = [IO.File]::ReadAllBytes($sourcePath)
-    if ($bytes.Length -lt 100000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
-        Say 'downloaded file is not a valid EXE (maybe the upload is still processing)' 'Red'
-        Say 'open the URL in a browser to check, then retry' 'DarkGray'
-        if ($tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
-        exit 1
-    }
-
     if (Test-Path -LiteralPath $exePath) { Remove-Item -LiteralPath $exePath -Force }
     Copy-Item -LiteralPath $sourcePath -Destination $exePath -Force
 }
