@@ -1,4 +1,4 @@
-3a9c7c92a739efccc22df48d8d61b55bd28037baa5bafebfdc89d5ecc0c38bae *Aki-Lxstboss-optimize.exe
-065fc0daa24da7ff34f100cf145829d312c7d57d45d68dfa1b28d8e05ba59ab3 *Aki-Lxst-Boss-Optimize-v2.6.0.zip
-0224b9ef4c0002c4463717da984bf0d8ed1bb654a1cd2ba03b1642ff2d86e796 *install.ps1
+68a1dda7bb3e3c29a3feeed2f671072cb6c53e5afe497c8eb1148db56024e710 *Aki-Lxstboss-optimize.exe
+04234f3ad6b7940da8758005efd52f567d3a72e8b0d9e04207426504f1638967 *Aki-Lxst-Boss-Optimize-v2.6.0.zip
+cce754b11209b8be700b634777c2ed43c7bbfb9ce70b8a0dbd5aaac44a5d9a03 *install.ps1
 # Aki Lxst Boss Optimize v2.6.0 - verify with: Get-FileHash <file> -Algorithm SHA256

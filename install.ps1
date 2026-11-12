@@ -151,8 +151,11 @@ if ($File) {
     $sumsUrl = $usedUrl -replace '[^/]+$', 'SHA256SUMS.txt'
     $published = ''
     try {
-        $sumsText = (Invoke-WebRequest -Uri (Get-CacheBusted $sumsUrl) -UseBasicParsing -TimeoutSec 30 `
-                       -Headers @{ 'Cache-Control' = 'no-cache' }).Content
+        $raw = (Invoke-WebRequest -Uri (Get-CacheBusted $sumsUrl) -UseBasicParsing -TimeoutSec 30 `
+                   -Headers @{ 'Cache-Control' = 'no-cache' }).Content
+        # GitHub hands out release assets as octet-stream, so the body can be bytes
+        if ($raw -is [byte[]]) { $sumsText = [Text.Encoding]::UTF8.GetString($raw) }
+        else { $sumsText = [string]$raw }
         $sumsText = $sumsText -replace "^\uFEFF", ''
         foreach ($line in ($sumsText -split "`n")) {
             if ($line -match '^\s*([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $matches[2] -eq $exeName) {
