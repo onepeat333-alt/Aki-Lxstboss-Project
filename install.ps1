@@ -5,6 +5,9 @@
 #  Normal use (downloads the EXE from GitHub):
 #    irm https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/install.ps1 | iex
 #
+#  The download is checked against SHA256SUMS.txt in the same repository and
+#  the installer keeps the copy you already have when it is identical.
+#
 #  Options:
 #    -Uninstall     remove the app + shortcuts (keeps your backups)
 #    -Purge         with -Uninstall: also delete %LOCALAPPDATA%\AkiLxstboss
@@ -12,7 +15,7 @@
 #    -File <path>   install from a local EXE instead of downloading
 #    -NoDesktop     skip the Desktop shortcuts
 #    -NoShortcuts   install only, no shortcuts at all
-#    -Force         re-download even when the installed copy is identical
+#    -Force         reinstall even when the installed copy is identical
 # ---------------------------------------------------------------
 [CmdletBinding()]
 param(
@@ -85,57 +88,84 @@ Write-Host '  ============================================================' -For
 
 if (-not (Test-Path -LiteralPath $appDir)) { New-Item -ItemType Directory -Path $appDir -Force | Out-Null }
 
-$needDownload = $true
-$localSource = $null
+# $sourcePath = the file that will be copied into place
+# $tempFile   = temporary download that has to be cleaned up afterwards
+$sourcePath = $null
+$tempFile   = $null
 
 if ($File) {
     if (-not (Test-Path -LiteralPath $File)) { Say "file not found: $File" 'Red'; exit 1 }
-    $localSource = (Resolve-Path -LiteralPath $File).Path
-    $needDownload = $false
-    Step "installing from local file"
-    Say $localSource 'Gray'
+    $sourcePath = (Resolve-Path -LiteralPath $File).Path
+    Step 'installing from local file'
+    Say $sourcePath 'Gray'
 } else {
-    $oldHash = if (Test-Path -LiteralPath $exePath) { (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash } else { '' }
-    if ($oldHash -and -not $Force) {
-        Step 'checking the published build'
-        try {
-            $head = Invoke-WebRequest -Uri ($Url + '?raw=1') -Method Head -UseBasicParsing -TimeoutSec 20
-            $remoteLen = [int64]$head.Headers['Content-Length']
-            $localLen = (Get-Item -LiteralPath $exePath).Length
-            if ($remoteLen -eq $localLen) {
-                Say "already up to date ($([math]::Round($localLen/1KB,1)) KB)" 'Green'
-                $needDownload = $false
-            }
-        } catch { }
-    }
-}
-
-if ($needDownload) {
     Step "downloading $exeName"
-    $tmp = Join-Path $env:TEMP ("aki-dl-" + [guid]::NewGuid().ToString('N') + '.exe')
+    $tempFile = Join-Path $env:TEMP ("aki-dl-" + [guid]::NewGuid().ToString('N') + '.exe')
     $bust = [DateTime]::UtcNow.Ticks
     try {
-        Invoke-WebRequest -Uri ($Url + '?raw=1&t=' + $bust) -OutFile $tmp -UseBasicParsing -TimeoutSec 180 `
+        Invoke-WebRequest -Uri ($Url + '?raw=1&t=' + $bust) -OutFile $tempFile -UseBasicParsing -TimeoutSec 180 `
             -Headers @{ 'Cache-Control' = 'no-cache' }
     } catch {
         Say "download failed: $($_.Exception.Message)" 'Red'
         Say 'check the URL or your connection, then try again' 'DarkGray'
+        if (Test-Path -LiteralPath $tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
         exit 1
     }
-    $localSource = $tmp
+
+    # --- verify the download against the published SHA256 list ---------
+    $newHash = (Get-FileHash -LiteralPath $tempFile -Algorithm SHA256).Hash
+    $sumsUrl = $Url -replace '[^/]+$', 'SHA256SUMS.txt'
+    $published = ''
+    try {
+        $sumsText = (Invoke-WebRequest -Uri ($sumsUrl + '?raw=1&t=' + $bust) -UseBasicParsing -TimeoutSec 30 `
+                       -Headers @{ 'Cache-Control' = 'no-cache' }).Content
+        $sumsText = $sumsText -replace "^\uFEFF", ''
+        foreach ($line in ($sumsText -split "`n")) {
+            if ($line -match '^\s*([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $matches[2] -eq $exeName) {
+                $published = $matches[1].ToUpper()
+                break
+            }
+        }
+    } catch { }
+
+    if ($published -and $published -ne $newHash) {
+        Say 'checksum mismatch - the download does not match the published build' 'Red'
+        Say "expected $published" 'DarkGray'
+        Say "got      $newHash" 'DarkGray'
+        Say 'nothing was installed - try again in a minute' 'DarkGray'
+        Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+    if ($published) { Say 'checksum OK (matches SHA256SUMS.txt)' 'Green' }
+    else { Say 'checksum list unavailable - skipped the check' 'Yellow' }
+
+    # --- same build? then keep the copy that is already installed ------
+    $oldHash = if (Test-Path -LiteralPath $exePath) { (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash } else { '' }
+    if ($oldHash -and $oldHash -eq $newHash -and -not $Force) {
+        $kbUp = [math]::Round((Get-Item -LiteralPath $tempFile).Length / 1KB, 1)
+        Say "already up to date ($kbUp KB)" 'Green'
+        Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+        $tempFile = $null
+    } else {
+        $sourcePath = $tempFile
+    }
 }
 
-# --- validate: must be a real Windows executable ---------------------
-$bytes = [IO.File]::ReadAllBytes($localSource)
-if ($bytes.Length -lt 100000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
-    Say 'downloaded file is not a valid EXE (maybe the upload is still processing)' 'Red'
-    Say 'open the URL in a browser to check, then retry' 'DarkGray'
-    exit 1
+if ($sourcePath) {
+    # --- validate: must be a real Windows executable -------------------
+    $bytes = [IO.File]::ReadAllBytes($sourcePath)
+    if ($bytes.Length -lt 100000 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+        Say 'downloaded file is not a valid EXE (maybe the upload is still processing)' 'Red'
+        Say 'open the URL in a browser to check, then retry' 'DarkGray'
+        if ($tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
+        exit 1
+    }
+
+    if (Test-Path -LiteralPath $exePath) { Remove-Item -LiteralPath $exePath -Force }
+    Copy-Item -LiteralPath $sourcePath -Destination $exePath -Force
 }
 
-if (Test-Path -LiteralPath $exePath) { Remove-Item -LiteralPath $exePath -Force }
-Copy-Item -LiteralPath $localSource -Destination $exePath -Force
-if (-not $File) { Remove-Item -LiteralPath $localSource -Force -ErrorAction SilentlyContinue }
+if ($tempFile) { Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue }
 Unblock-File -LiteralPath $exePath -ErrorAction SilentlyContinue
 
 $sha = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
