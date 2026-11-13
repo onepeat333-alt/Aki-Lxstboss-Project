@@ -22,7 +22,7 @@
 # ---------------------------------------------------------------
 [CmdletBinding()]
 param(
-    [string]$Url = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/releases/download/v2.6.0/Aki-Lxstboss-optimize.exe',
+    [string]$Url = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/releases/download/v2.7.0/Aki-Lxstboss-optimize.exe',
     [string]$FallbackUrl = 'https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/Aki-Lxstboss-optimize.exe',
     [string]$File,
     [switch]$Uninstall,

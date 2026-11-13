@@ -2,7 +2,7 @@
 
 โปรแกรมตั้งค่า FiveM แบบพกพา (ไม่ต้องติดตั้ง Node.js, ไม่ต้อง build) ธีมดำ–โครม (obsidian / chrome) HUD
 รันบนเครื่องตัวเองผ่าน PowerShell + เปิดหน้าเว็บที่ `http://localhost:5180`
-เวอร์ชัน **2.6.0** — แจกจ่ายให้คนอื่นใช้ได้ทันที (ดูหัวข้อ [แจกจ่ายให้คนอื่น](#แจกจ่ายให้คนอื่น))
+เวอร์ชัน **2.7.0** — แจกจ่ายให้คนอื่นใช้ได้ทันที (ดูหัวข้อ [แจกจ่ายให้คนอื่น](#แจกจ่ายให้คนอื่น))
 
 ## เริ่มใช้งาน
 
@@ -60,6 +60,8 @@ powershell -ExecutionPolicy Bypass -File .\AkiBossMap.ps1
 | `build-exe.ps1` | เรียก `build-dist.ps1` แล้วฝัง ZIP เป็น EXE ไฟล์เดียว |
 | `build-all.ps1` | **คำสั่งเดียวจบ**: ตรวจ → อัด ZIP → สร้าง EXE → เปิดโฟลเดอร์ `dist` |
 | `install-app.ps1` | สร้าง/ถอนทางลัดแบบแอป (Desktop + Start Menu, มีตัวเลือก Admin) |
+| `install.ps1` | ตัวติดตั้งแบบบรรทัดเดียว (ดาวน์โหลดจาก GitHub + เทียบ SHA256) |
+| `publish-github.ps1` | build → เขียน `SHA256SUMS.txt` → commit/tag/push → อัปโหลดไฟล์ขึ้น Release |
 | `exe-launcher/Program.cs` | ตัวแตกไฟล์ของ EXE (คอมไพล์ด้วย `csc.exe` ที่มากับ Windows) |
 
 ลำดับที่แนะนำ — แก้โค้ด → ตรวจ → แพ็ก:
@@ -99,13 +101,30 @@ powershell -ExecutionPolicy Bypass -File .\build-exe.ps1
 
 ## ติดตั้งด้วยคำสั่งเดียว (จาก GitHub)
 
-ไฟล์ที่ต้องอัปขึ้น repo มี **2 ไฟล์**: `Aki-Lxstboss-optimize.exe` (ตัวแอป) และ `install.ps1` (ตัวติดตั้ง)
+repo: **https://github.com/onepeat333-alt/Aki-Lxstboss-Project** — ไฟล์ที่อยู่ใน repo คือ
+`Aki-Lxstboss-optimize.exe` (ตัวแอป), `Aki-Lxst-Boss-Optimize-v2.7.0.zip` (แพ็กเกจเต็ม),
+`install.ps1` (ตัวติดตั้ง), `README.md`, `คู่มือใช้งาน.md` และ `SHA256SUMS.txt`
 
 ```powershell
 irm https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/install.ps1 | iex
 ```
 
-ตัวติดตั้งจะ: ดาวน์โหลด EXE → เก็บที่ `%LOCALAPPDATA%\AkiLxstboss\app\Aki-Lxstboss-optimize.exe` → ตรวจว่าเป็นไฟล์ EXE จริง → สร้างทางลัด Desktop + Start Menu (ปกติ/Admin) → พิมพ์ SHA256
+หรือแบบตรึงเวอร์ชัน (ไฟล์ใน Release ไม่ผันผวน ตรวจ hash ได้ตรงเสมอ):
+
+```powershell
+irm https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/v2.7.0/install.ps1 | iex
+```
+
+ตัวติดตั้งจะ: ดาวน์โหลด EXE จาก Release → **เทียบ SHA256 กับ `SHA256SUMS.txt`** (ถ้าไม่ตรงจะยกเลิก ไม่ติดตั้ง)
+→ เก็บที่ `%LOCALAPPDATA%\AkiLxstboss\app\Aki-Lxstboss-optimize.exe` → ตรวจว่าเป็นไฟล์ EXE จริง
+→ ถ้าไฟล์ที่ติดตั้งอยู่เป็นเวอร์ชันเดิมจะข้ามการติดตั้งซ้ำ → สร้างทางลัด Desktop + Start Menu (ปกติ/Admin) → พิมพ์ SHA256
+
+เรียกใช้งานหลังติดตั้ง:
+
+```powershell
+Start-Process "$env:LOCALAPPDATA\AkiLxstboss\app\Aki-Lxstboss-optimize.exe"
+Start-Process "$env:LOCALAPPDATA\AkiLxstboss\app\Aki-Lxstboss-optimize.exe" -ArgumentList "-Admin" -Verb RunAs
+```
 
 | คำสั่ง | ทำอะไร |
 | --- | --- |
@@ -148,7 +167,7 @@ powershell -ExecutionPolicy Bypass -File build-dist.ps1
 1. คัดลอกเฉพาะไฟล์ที่ต้องแจก (`app/`, `AkiBossMap.ps1`, `server.ps1`, `run.bat`, `run-admin.bat`, `stop.bat`, `README.md`, `คู่มือใช้งาน.md`)
 2. ตรวจว่า `server.ps1` ยังมี UTF-8 BOM (ภาษาไทยจะไม่เพี้ยน) และ `server.ps1` / `AkiBossMap.ps1` ไม่มี syntax error
 3. ตรวจว่าเลขเวอร์ชันตรงกัน และรูปทุกใบที่ UI อ้างถึงมีอยู่จริง
-4. อัดเป็น `dist/Aki-Lxst-Boss-Optimize-v2.6.0.zip`
+4. อัดเป็น `dist/Aki-Lxst-Boss-Optimize-v2.7.0.zip`
 
 > ถ้าข้อใดข้อหนึ่งไม่ผ่าน สคริปต์จะ **ไม่สร้าง ZIP** และบอกว่าติดตรงไหน — กันการแจกไฟล์ที่พัง
 
@@ -191,6 +210,21 @@ powershell -ExecutionPolicy Bypass -File build-exe.ps1
 
 **อัปโหลดขึ้น GitHub (ทำทุกครั้งที่ออกรุ่นใหม่)**
 
+มีสคริปต์ให้ทำให้อัตโนมัติ — build → เขียน `SHA256SUMS.txt` → commit + tag + push → อัปโหลดไฟล์ขึ้น Release:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\publish-github.ps1
+```
+
+| ตัวเลือก | ทำอะไร |
+| --- | --- |
+| `-Repo owner/name` | ปลายทางอื่น (ค่าเริ่มต้น `onepeat333-alt/Aki-Lxstboss-Project`) |
+| `-SkipBuild` | ข้ามการ build (ใช้ไฟล์ใน `dist\` ที่มีอยู่แล้ว) |
+| `-NoPush` | เตรียมไฟล์อย่างเดียว ยังไม่ push |
+| `-Draft` | สร้าง Release เป็นแบบ Draft |
+
+ทำเองผ่านเว็บก็ได้:
+
 1. เปิด https://github.com/onepeat333-alt/Aki-Lxstboss-Project
 2. กด **Add file → Upload files**
 3. ลาก `dist\Aki-Lxstboss-optimize.exe` ไปวางทับไฟล์เดิม → **Commit changes** (สาขา `main`)
@@ -200,12 +234,19 @@ powershell -ExecutionPolicy Bypass -File build-exe.ps1
 Invoke-WebRequest -Uri "https://github.com/onepeat333-alt/Aki-Lxstboss-Project/raw/main/Aki-Lxstboss-optimize.exe" -OutFile "$env:TEMP\Aki-Lxstboss-optimize.exe"; Start-Process "$env:TEMP\Aki-Lxstboss-optimize.exe"
 ```
 
+หรือโหลดจาก Release (ไม่มีแคช ได้ไฟล์ล่าสุดเสมอ):
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/onepeat333-alt/Aki-Lxstboss-Project/releases/latest/download/Aki-Lxstboss-optimize.exe" -OutFile "$env:TEMP\Aki-Lxstboss-optimize.exe"; Start-Process "$env:TEMP\Aki-Lxstboss-optimize.exe"
+```
+
 **ข้อควรรู้ก่อนแจก EXE**
 
 - EXE ไม่ได้เซ็นชื่อ → Windows SmartScreen จะเตือน *"Windows protected your PC"* ครั้งแรก (More info → Run anyway) และ antivirus บางตัวอาจตั้งข้อสังเกตเพราะ EXE แตกไฟล์แล้วเรียก PowerShell ถ้าจะแจกวงกว้างควรมี code signing certificate
-- ตรวจว่าไฟล์ที่โหลดมาไม่ถูกแก้: `Get-FileHash "$env:TEMP\Aki-Lxstboss-optimize.exe" -Algorithm SHA256` แล้วเทียบกับค่า SHA256 ที่ `build-exe.ps1` พิมพ์ตอนสร้าง
-- GitHub raw มีแคช ถ้าคนอื่นยังได้รุ่นเก่า ให้รอ 1–2 นาทีแล้วโหลดใหม่ หรือใช้ **Releases** (`https://github.com/<user>/<repo>/releases/latest/download/Aki-Lxstboss-optimize.exe`) ซึ่งเหมาะกับการแจกหลายเวอร์ชันกว่า
+- ตรวจว่าไฟล์ที่โหลดมาไม่ถูกแก้: `Get-FileHash "$env:TEMP\Aki-Lxstboss-optimize.exe" -Algorithm SHA256` แล้วเทียบกับค่า SHA256 ที่ `build-exe.ps1` พิมพ์ตอนสร้าง หรือดูใน `SHA256SUMS.txt` ของ repo
+- GitHub raw มีแคช 5 นาที ถ้าคนอื่นยังได้รุ่นเก่า ให้รอแล้วโหลดใหม่ หรือใช้ **Releases** (`.../releases/latest/download/Aki-Lxstboss-optimize.exe`) ซึ่งเหมาะกับการแจกหลายเวอร์ชันกว่า
 - EXE ไม่ได้อัปเดตตัวเอง — อัปโหลดทับแล้วผู้ใช้ต้องโหลดไฟล์ใหม่ (ตัวเก่าไม่หาย แต่จะไม่ถูกลบ)
+- ตัว payload ข้างใน EXE ถูกบีบอัดแบบ deterministic (เวลาในไฟล์คงที่) ทำให้ build ซ้ำด้วยโค้ดเดิมได้ payload เดิม แต่ hash ของ EXE ยังเปลี่ยนทุกครั้งเพราะ `csc.exe` ใส่ timestamp ลงในไฟล์ PE
 
 ## ค่าที่ใช้
 
@@ -308,7 +349,12 @@ AkiBossMap/
 ├─ run.bat            เปิดแอป (เรียก server.ps1)
 ├─ stop.bat           ปิดเซิร์ฟเวอร์ที่ค้างอยู่
 ├─ server.ps1         HTTP server + JSON API + tweak/QoS logic (ไม่ต้องใช้ dependency)
+├─ install.ps1        ตัวติดตั้งแบบบรรทัดเดียว (ดาวน์โหลดจาก GitHub + เทียบ SHA256)
+├─ install-app.ps1    สร้าง/ถอนทางลัดแบบแอป (Desktop + Start Menu)
+├─ build-dist.ps1     ตรวจความถูกต้อง + อัด ZIP สำหรับแจก
 ├─ build-exe.ps1      สร้าง dist\Aki-Lxstboss-optimize.exe (EXE ไฟล์เดียวที่ฝังแอปทั้งชุด)
+├─ build-all.ps1      ตรวจ → อัด ZIP → สร้าง EXE (ทีละขั้น)
+├─ publish-github.ps1 build → SHA256SUMS.txt → commit/tag/push → อัปโหลด Release
 ├─ exe-launcher/      ซอร์ส C# ของตัวเรียกที่อยู่ใน EXE
 └─ app/
    ├─ index.html
@@ -319,6 +365,7 @@ AkiBossMap/
       ├─ data.js      นิยามค่าที่ปรับได้ + โปรไฟล์ + รายการ tweak
       ├─ store.js     state, activity log, รายการโปรด
       ├─ api.js       ตัวเรียก API (มีโหมดตัวอย่างเมื่อต่อ backend ไม่ได้)
+      ├─ perf.js      เลือกโหมดประสิทธิภาพหน้าจอ (อัตโนมัติ / ลื่นไหล / เอฟเฟกต์เต็ม)
       ├─ actions.js   ตัวช่วยเรียก action + toast
       ├─ ui.js        toast / modal / format
       ├─ icons.js     ชุดไอคอน SVG
